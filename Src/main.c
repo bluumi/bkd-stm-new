@@ -20,11 +20,11 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stm32f7xx_hal.h"
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,17 +42,91 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
 
-UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+#define RECEIVE_BUFFER_LEN	256
+uint8_t receive_buffer[RECEIVE_BUFFER_LEN];		//!< circular receive buffer
+size_t rec_buf_read_i = 0;
+size_t rec_buf_write_i = 0;
+
+uint8_t receive_buffer_peek_data[256];		//!< a copy of receive buffer; not circular
+
+
+bool receive_buffer_put_byte(uint8_t c)
+{
+	size_t new_write_i = (rec_buf_write_i + 1) % RECEIVE_BUFFER_LEN;
+	if (new_write_i == rec_buf_read_i)
+		return false;
+
+	receive_buffer[rec_buf_write_i] = c;
+	rec_buf_write_i = new_write_i;
+	return true;
+}
+
+
+size_t receive_buffer_peek(void)
+{
+	size_t read_i = rec_buf_read_i;
+	size_t write_i = rec_buf_write_i;
+	size_t len = 0;
+
+	for (;; ++len)
+	{
+		// checking if byte present in receive buffer:
+		if (read_i == write_i)
+			break;
+		receive_buffer_peek_data[len] = receive_buffer[read_i];
+		read_i = (read_i + 1) % RECEIVE_BUFFER_LEN;
+	}
+	return len;
+}
+
+
+bool receive_buffer_erase(size_t len)
+{
+	for (size_t i = 0; i < len; ++i)
+	{
+		// checking if can erase:
+		if (rec_buf_read_i == rec_buf_write_i)
+			return false;
+		rec_buf_read_i = (rec_buf_read_i + 1) % RECEIVE_BUFFER_LEN;
+	}
+	return true;
+}
+
+
+/*
+ * For any index we do operation and then increase (modulo 12)
+ *
+          0   1   2   3   4   5   6   7   8   9   10  11
+buffer:  [h] [e] [l] [l] [o] [ ] [w] [o] [r] [l] [d] [ ]  (12 bytes)
+read_i:                           ^
+write_i:                                              ^
+
+Special cases:
+
+1. FULL
+buffer:  [X] [X] [X] [X] [X] [ ] [w] [o] [r] [l] [d] [X]  (12 bytes)
+read_i:                           ^
+write_i:                      ^
+
+2. EMPTY
+buffer:  [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]  (12 bytes)
+read_i:                       ^
+write_i:                      ^
+*/
+
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART3_UART_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -69,7 +143,8 @@ static void MX_USART3_UART_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	uint8_t cmdbuf[20] = "test uart\r\n"; //string buffer
+	//uint16_t count=0;
   /* USER CODE END 1 */
   
 
@@ -91,8 +166,8 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART3_UART_Init();
-  MX_USB_DEVICE_Init();
+  MX_ADC1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -106,7 +181,48 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+	  HAL_UART_Transmit(&huart2, cmdbuf, 20, HAL_MAX_DELAY);
+	  HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+	  HAL_Delay(100);
+#if 0
+	  // checking so-far received data using peek:
+	  size_t len = receive_buffer_peek();
+	  if (len != 0)
+	  {
+		  /// << scanning received peek data for 0x0A (LF) symbol
+		  // if found, processing string until that symbol
+		  // erasing this string + LF symbol
+
+		  // 0x0D - "Enter" HEX code
+		  continue;
+
+		  if ((len >= 2) && (strncmp((char*)receive_buffer_peek_data, "ON", 2) == 0))
+		  {
+			  // turn LED ON
+			  	//HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET);
+				receive_buffer_erase(2);
+		  } else if ((len >= 3) && (strncmp((char*)receive_buffer_peek_data, "OFF", 3) == 0))
+		  {
+			  // turn LED OFF
+			  	//HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_RESET);
+			  	receive_buffer_erase(3);
+		  } else if ((len >= 5) && (strncmp((char*)receive_buffer_peek_data, "PRINT", 5) == 0))
+		  {
+//				sprintf(cmdbuf,"wassup");
+//				MX_USB_SEND_DATA((uint8_t *)cmdbuf,strlen(cmdbuf));
+				HAL_UART_Transmit(&huart3, cmdbuf, 20, 10);
+				HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
+				HAL_Delay(1000);
+				receive_buffer_erase(5);
+		  } else
+		  {
+				receive_buffer_erase(1);
+		  }
+	  }
+#endif
   }
+
   /* USER CODE END 3 */
 }
 
@@ -160,9 +276,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART3|RCC_PERIPHCLK_CLK48;
-  PeriphClkInitStruct.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
-  PeriphClkInitStruct.Clk48ClockSelection = RCC_CLK48SOURCE_PLL;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART2;
+  PeriphClkInitStruct.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -170,37 +285,87 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief USART3 Initialization Function
+  * @brief ADC1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART3_UART_Init(void)
+static void MX_ADC1_Init(void)
 {
 
-  /* USER CODE BEGIN USART3_Init 0 */
+  /* USER CODE BEGIN ADC1_Init 0 */
 
-  /* USER CODE END USART3_Init 0 */
+  /* USER CODE END ADC1_Init 0 */
 
-  /* USER CODE BEGIN USART3_Init 1 */
+  ADC_ChannelConfTypeDef sConfig = {0};
 
-  /* USER CODE END USART3_Init 1 */
-  huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
-  huart3.Init.WordLength = UART_WORDLENGTH_8B;
-  huart3.Init.StopBits = UART_STOPBITS_1;
-  huart3.Init.Parity = UART_PARITY_NONE;
-  huart3.Init.Mode = UART_MODE_TX_RX;
-  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart3) != HAL_OK)
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion) 
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART3_Init 2 */
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
 
-  /* USER CODE END USART3_Init 2 */
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -216,10 +381,10 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
