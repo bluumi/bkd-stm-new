@@ -24,7 +24,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stm32f7xx_hal.h"
+#include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,7 +55,7 @@ size_t rec_buf_read_i = 0;
 size_t rec_buf_write_i = 0;
 
 uint8_t receive_buffer_peek_data[256];		//!< a copy of receive buffer; not circular
-
+uint8_t c[RECEIVE_BUFFER_LEN];
 
 bool receive_buffer_put_byte(uint8_t c)
 {
@@ -143,7 +145,7 @@ static void MX_USART2_UART_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	uint8_t cmdbuf[20] = "test uart\r\n"; //string buffer
+	char msg[20]; //string buffer
 	//uint16_t count=0;
   /* USER CODE END 1 */
   
@@ -182,10 +184,12 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  HAL_UART_Transmit(&huart2, cmdbuf, 20, HAL_MAX_DELAY);
-	  HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
-	  HAL_Delay(100);
-#if 0
+		sprintf(msg,"Test transmit\r\n");
+	  	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+		HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+		HAL_Delay(500);
+
+
 	  // checking so-far received data using peek:
 	  size_t len = receive_buffer_peek();
 	  if (len != 0)
@@ -200,19 +204,18 @@ int main(void)
 		  if ((len >= 2) && (strncmp((char*)receive_buffer_peek_data, "ON", 2) == 0))
 		  {
 			  // turn LED ON
-			  	//HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET);
+			  	HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_SET);
 				receive_buffer_erase(2);
 		  } else if ((len >= 3) && (strncmp((char*)receive_buffer_peek_data, "OFF", 3) == 0))
 		  {
 			  // turn LED OFF
-			  	//HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_RESET);
+			  	HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_RESET);
 			  	receive_buffer_erase(3);
 		  } else if ((len >= 5) && (strncmp((char*)receive_buffer_peek_data, "PRINT", 5) == 0))
 		  {
-//				sprintf(cmdbuf,"wassup");
-//				MX_USB_SEND_DATA((uint8_t *)cmdbuf,strlen(cmdbuf));
-				HAL_UART_Transmit(&huart3, cmdbuf, 20, 10);
-				HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
+				sprintf(msg,"Test\r\n");
+			  	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+				HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
 				HAL_Delay(1000);
 				receive_buffer_erase(5);
 		  } else
@@ -220,7 +223,6 @@ int main(void)
 				receive_buffer_erase(1);
 		  }
 	  }
-#endif
   }
 
   /* USER CODE END 3 */
@@ -350,7 +352,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 57600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
