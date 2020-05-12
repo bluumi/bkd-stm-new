@@ -23,10 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stm32f7xx_hal.h"
-#include <string.h>
-#include <stdbool.h>
-#include <stdio.h>
+#include "main_module.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,80 +44,14 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-#define RECEIVE_BUFFER_LEN	256
-uint8_t receive_buffer[RECEIVE_BUFFER_LEN];		//!< circular receive buffer
-size_t rec_buf_read_i = 0;
-size_t rec_buf_write_i = 0;
-
-uint8_t receive_buffer_peek_data[256];		//!< a copy of receive buffer; not circular
-uint8_t c[RECEIVE_BUFFER_LEN];
-
-bool receive_buffer_put_byte(uint8_t c)
-{
-	size_t new_write_i = (rec_buf_write_i + 1) % RECEIVE_BUFFER_LEN;
-	if (new_write_i == rec_buf_read_i)
-		return false;
-
-	receive_buffer[rec_buf_write_i] = c;
-	rec_buf_write_i = new_write_i;
-	return true;
-}
 
 
-size_t receive_buffer_peek(void)
-{
-	size_t read_i = rec_buf_read_i;
-	size_t write_i = rec_buf_write_i;
-	size_t len = 0;
-
-	for (;; ++len)
-	{
-		// checking if byte present in receive buffer:
-		if (read_i == write_i)
-			break;
-		receive_buffer_peek_data[len] = receive_buffer[read_i];
-		read_i = (read_i + 1) % RECEIVE_BUFFER_LEN;
-	}
-	return len;
-}
 
 
-bool receive_buffer_erase(size_t len)
-{
-	for (size_t i = 0; i < len; ++i)
-	{
-		// checking if can erase:
-		if (rec_buf_read_i == rec_buf_write_i)
-			return false;
-		rec_buf_read_i = (rec_buf_read_i + 1) % RECEIVE_BUFFER_LEN;
-	}
-	return true;
-}
-
-
-/*
- * For any index we do operation and then increase (modulo 12)
- *
-          0   1   2   3   4   5   6   7   8   9   10  11
-buffer:  [h] [e] [l] [l] [o] [ ] [w] [o] [r] [l] [d] [ ]  (12 bytes)
-read_i:                           ^
-write_i:                                              ^
-
-Special cases:
-
-1. FULL
-buffer:  [X] [X] [X] [X] [X] [ ] [w] [o] [r] [l] [d] [X]  (12 bytes)
-read_i:                           ^
-write_i:                      ^
-
-2. EMPTY
-buffer:  [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ] [ ]  (12 bytes)
-read_i:                       ^
-write_i:                      ^
-*/
 
 
 /* USER CODE END PV */
@@ -129,6 +61,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -145,7 +78,7 @@ static void MX_USART2_UART_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	char msg[20]; //string buffer
+
 	//uint16_t count=0;
   /* USER CODE END 1 */
   
@@ -170,7 +103,9 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_USART2_UART_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  main_module();
 
   /* USER CODE END 2 */
  
@@ -184,45 +119,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-		sprintf(msg,"Test transmit\r\n");
-	  	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-		HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
-		HAL_Delay(500);
 
-
-	  // checking so-far received data using peek:
-	  size_t len = receive_buffer_peek();
-	  if (len != 0)
-	  {
-		  /// << scanning received peek data for 0x0A (LF) symbol
-		  // if found, processing string until that symbol
-		  // erasing this string + LF symbol
-
-		  // 0x0D - "Enter" HEX code
-		  continue;
-
-		  if ((len >= 2) && (strncmp((char*)receive_buffer_peek_data, "ON", 2) == 0))
-		  {
-			  // turn LED ON
-			  	HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_SET);
-				receive_buffer_erase(2);
-		  } else if ((len >= 3) && (strncmp((char*)receive_buffer_peek_data, "OFF", 3) == 0))
-		  {
-			  // turn LED OFF
-			  	HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_RESET);
-			  	receive_buffer_erase(3);
-		  } else if ((len >= 5) && (strncmp((char*)receive_buffer_peek_data, "PRINT", 5) == 0))
-		  {
-				sprintf(msg,"Test\r\n");
-			  	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-				HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
-				HAL_Delay(1000);
-				receive_buffer_erase(5);
-		  } else
-		  {
-				receive_buffer_erase(1);
-		  }
-	  }
   }
 
   /* USER CODE END 3 */
@@ -278,7 +175,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART2;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART1|RCC_PERIPHCLK_USART2;
+  PeriphClkInitStruct.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
   PeriphClkInitStruct.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
@@ -337,6 +235,41 @@ static void MX_ADC1_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -352,7 +285,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 57600;
+  huart2.Init.BaudRate = 115200;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;

@@ -1244,7 +1244,7 @@ HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *huart, uint8_t *pData,
   /* Check that a Rx process is not already ongoing */
   if (huart->RxState == HAL_UART_STATE_READY)
   {
-    if ((pData == NULL) || (Size == 0U))
+    if ((pData == NULL)) // || (Size == 0U))
     {
       return HAL_ERROR;
     }
@@ -3367,33 +3367,44 @@ static void UART_RxISR_8BIT(UART_HandleTypeDef *huart)
   /* Check that a Rx process is ongoing */
   if (huart->RxState == HAL_UART_STATE_BUSY_RX)
   {
-    uhdata = (uint16_t) READ_REG(huart->Instance->RDR);
-    *huart->pRxBuffPtr = (uint8_t)(uhdata & (uint8_t)uhMask);
-    huart->pRxBuffPtr++;
-    huart->RxXferCount--;
+	  if (huart->RxXferCount == 0U)
+	  {
+		  // infinite receive mode
+		  void (*fun_ptr)(uint8_t) = (void (*)(uint8_t))huart->pRxBuffPtr;
+		  uhdata = (uint16_t) READ_REG(huart->Instance->RDR);
+		  fun_ptr((uint8_t)(uhdata & (uint8_t)uhMask));
+	  }
+	  else
+	  {
+		  // default receive mode
+		uhdata = (uint16_t) READ_REG(huart->Instance->RDR);
+		*huart->pRxBuffPtr = (uint8_t)(uhdata & (uint8_t)uhMask);
+		huart->pRxBuffPtr++;
+		huart->RxXferCount--;
 
-    if (huart->RxXferCount == 0U)
-    {
-      /* Disable the UART Parity Error Interrupt and RXNE interrupts */
-      CLEAR_BIT(huart->Instance->CR1, (USART_CR1_RXNEIE | USART_CR1_PEIE));
+		if (huart->RxXferCount == 0U)
+		{
+		  /* Disable the UART Parity Error Interrupt and RXNE interrupts */
+		  CLEAR_BIT(huart->Instance->CR1, (USART_CR1_RXNEIE | USART_CR1_PEIE));
 
-      /* Disable the UART Error Interrupt: (Frame error, noise error, overrun error) */
-      CLEAR_BIT(huart->Instance->CR3, USART_CR3_EIE);
+		  /* Disable the UART Error Interrupt: (Frame error, noise error, overrun error) */
+		  CLEAR_BIT(huart->Instance->CR3, USART_CR3_EIE);
 
-      /* Rx process is completed, restore huart->RxState to Ready */
-      huart->RxState = HAL_UART_STATE_READY;
+		  /* Rx process is completed, restore huart->RxState to Ready */
+		  huart->RxState = HAL_UART_STATE_READY;
 
-      /* Clear RxISR function pointer */
-      huart->RxISR = NULL;
+		  /* Clear RxISR function pointer */
+		  huart->RxISR = NULL;
 
-#if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
-      /*Call registered Rx complete callback*/
-      huart->RxCpltCallback(huart);
-#else
-      /*Call legacy weak Rx complete callback*/
-      HAL_UART_RxCpltCallback(huart);
-#endif /* USE_HAL_UART_REGISTER_CALLBACKS */
-    }
+	#if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
+		  /*Call registered Rx complete callback*/
+		  huart->RxCpltCallback(huart);
+	#else
+		  /*Call legacy weak Rx complete callback*/
+		  HAL_UART_RxCpltCallback(huart);
+	#endif /* USE_HAL_UART_REGISTER_CALLBACKS */
+		}
+	  }
   }
   else
   {
