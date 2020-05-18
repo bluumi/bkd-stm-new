@@ -4,18 +4,34 @@
  *  Created on: May 13, 2020
  *      Author: ipumpurs
  */
-#include "main_module.h"
 
+/* Includes */
+#include "main_module.h"
 #include "main.h"
+
 #include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
 
+/* External Typedef */
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 
 
+#ifndef LF
+	#define LF '\x0A'
+#endif
+
+
+/*-------------- Receive buffer definitions -----------------*/
+
+
+
+
 /*
+ *
+ *
+ *
  * For any index we do operation and then increase (modulo 12)
  *
           0   1   2   3   4   5   6   7   8   9   10  11
@@ -50,9 +66,7 @@ void receive_buffer_put_byte(uint8_t c)
 
 	receive_buffer[rec_buf_write_i] = c;
 	rec_buf_write_i = new_write_i;
-
 }
-
 
 size_t receive_buffer_peek(void)
 {
@@ -71,7 +85,6 @@ size_t receive_buffer_peek(void)
 	return len;
 }
 
-
 bool receive_buffer_erase(size_t len)
 {
 	for (size_t i = 0; i < len; ++i)
@@ -84,61 +97,56 @@ bool receive_buffer_erase(size_t len)
 	return true;
 }
 
-
+/*------------------------------------------------------*/
 
 void main_module(void)
 {
-	char msg[20]; //string buffer
+	char msg[64];
 
 	HAL_UART_Receive_IT(&huart2, (uint8_t*)receive_buffer_put_byte, 0); // infinite receive
 
 	while(1)
 	{
-//	  	HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
-//	  	HAL_Delay(250);
 
 		//HAL_UART_StateTypeDef state =  HAL_UART_GetState(&huart2);
-
-		//HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
 		HAL_Delay(10);
 
+		// checking so-far received data using peek:
+		size_t len = receive_buffer_peek();
 
+		if(len != 0)
+		{
+			bool LF_found = false;
+			size_t LF_position;
+			for (LF_position = 0; LF_position < len; ++LF_position)
+			{
+				if (receive_buffer_peek_data[LF_position] == LF)
+				{
+					LF_found = true;
+					break;
+				}
+			}
 
+			if (LF_found)
+			{
+				// processing command - bytes from 0...(LF_position-1), length = LF_position
 
-	  // checking so-far received data using peek:
-	  size_t len = receive_buffer_peek();
-	  if (len != 0)
-	  {
-		  /// << scanning received peek data for 0x0A (LF) symbol
-		  // if found, processing string until that symbol
-		  // erasing this string + LF symbol
+				//! TODO
+				//if (isCommand("PRINT"))
 
-		  // 0x0D - "Enter" HEX code
-		  //continue;
-
-		  if ((len >= 2) && (strncmp((char*)receive_buffer_peek_data, "ON", 2) == 0))
-		  {
-			  // turn LED ON
-				HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_SET);
-				receive_buffer_erase(2);
-		  } else if ((len >= 3) && (strncmp((char*)receive_buffer_peek_data, "OFF", 3) == 0))
-		  {
-			  // turn LED OFF
-				HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_RESET);
-				receive_buffer_erase(3);
-		  } else if ((len >= 5) && (strncmp((char*)receive_buffer_peek_data, "PRINT", 5) == 0))
-		  {
-			  sprintf(msg,"Print..\r\n");
-				HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
-				while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
-				HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
-				HAL_Delay(1000);
-				receive_buffer_erase(5);
-		  } else
-		  {
-				receive_buffer_erase(1);
-		  }
-	  }
+				if ((LF_position == 5) && (strncmp((char*)receive_buffer_peek_data, "PRINT", 5) == 0))
+				{
+					sprintf(msg,"Print..\r\n");
+					HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
+					while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);											//!< TODO
+					HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+				} else if ((LF_position == 2) && (strncmp((char*)receive_buffer_peek_data, "ON", 2) == 0))
+				{
+					HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET);
+				}
+				// erasing this string + LF symbol
+				receive_buffer_erase(LF_position+1);
+			}
+		}
 	}
 }
-
