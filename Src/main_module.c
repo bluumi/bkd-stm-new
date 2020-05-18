@@ -17,17 +17,17 @@
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 
-
 #ifndef LF
 	#define LF '\x0A'
 #endif
 
 
+/* Command handlers */
+void isCommand(char *cmdd, size_t LF_position);
+void cmd_print(void);
+void cmd_led(void);
+
 /*-------------- Receive buffer definitions -----------------*/
-
-
-
-
 /*
  *
  *
@@ -56,6 +56,7 @@ volatile uint8_t receive_buffer[RECEIVE_BUFFER_LEN];		//!< circular receive buff
 volatile size_t rec_buf_read_i = 0;
 volatile size_t rec_buf_write_i = 0;
 
+char msg[64];
 uint8_t receive_buffer_peek_data[256];		//!< a copy of receive buffer; not circular
 
 void receive_buffer_put_byte(uint8_t c)
@@ -101,8 +102,6 @@ bool receive_buffer_erase(size_t len)
 
 void main_module(void)
 {
-	char msg[64];
-
 	HAL_UART_Receive_IT(&huart2, (uint8_t*)receive_buffer_put_byte, 0); // infinite receive
 
 	while(1)
@@ -134,19 +133,40 @@ void main_module(void)
 				//! TODO
 				//if (isCommand("PRINT"))
 
-				if ((LF_position == 5) && (strncmp((char*)receive_buffer_peek_data, "PRINT", 5) == 0))
-				{
-					sprintf(msg,"Print..\r\n");
-					HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
-					while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);											//!< TODO
-					HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
-				} else if ((LF_position == 2) && (strncmp((char*)receive_buffer_peek_data, "ON", 2) == 0))
-				{
-					HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET);
-				}
+				isCommand((char*)receive_buffer_peek_data, LF_position);
+
 				// erasing this string + LF symbol
 				receive_buffer_erase(LF_position+1);
 			}
 		}
 	}
+}
+
+
+void isCommand(char *cmdd, size_t LF_position)
+{
+	if ((strncmp("PRINT", (char*)cmdd, 5) == 0) && (LF_position == 5)) // PRINT cmd
+	{
+		cmd_print();
+	} else if ((strncmp("ON", (char*)cmdd, 2) == 0) && (LF_position == 2)) // ON cmd
+	{
+		cmd_led();
+	} else
+	{
+		return;
+	}
+}
+
+
+void cmd_print(void)
+{
+	sprintf(msg,"Printer..\r\n");
+	HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
+	while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);											//!< TODO
+	HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
+}
+
+void cmd_led(void)
+{
+	HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
 }
