@@ -16,6 +16,8 @@
 /* External Typedef */
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern ADC_HandleTypeDef hadc1;
+extern DMA_HandleTypeDef hdma_adc1;
 
 #ifndef LF
 	#define LF '\x0A'
@@ -99,6 +101,8 @@ bool receive_buffer_erase(size_t len)
 }
 
 /*------------------------------------------------------*/
+volatile bool adc_busy = false;
+
 
 void main_module(void)
 {
@@ -151,6 +155,27 @@ void isCommand(char *cmdd, size_t LF_position)
 	} else if ((strncmp("ON", (char*)cmdd, 2) == 0) && (LF_position == 2)) // ON cmd
 	{
 		cmd_led();
+	} else if ((strncmp("ADC", (char*)cmdd, 3) == 0) && (LF_position == 3))
+	{
+		uint16_t ADC_data[1024];
+		adc_busy = true;
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_data, 1024);
+
+		while(adc_busy);;
+
+		sprintf(msg,"ADC done..\r\n");
+		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
+		while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
+
+		// printing values
+		for (size_t i = 0; i < 1024; ++i)
+		{
+			sprintf(msg,"ADC value = %d\r\n", ADC_data[i]);
+			HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
+			while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
+		}
+
+
 	} else
 	{
 		return;
@@ -169,4 +194,10 @@ void cmd_print(void)
 void cmd_led(void)
 {
 	HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
+}
+
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	adc_busy = false;
 }
