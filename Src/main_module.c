@@ -157,6 +157,7 @@ void isCommand(char *cmdd, size_t LF_position)
 		cmd_led();
 	} else if ((strncmp("ADC", (char*)cmdd, 3) == 0) && (LF_position == 3))
 	{
+<<<<<<< HEAD
 		size_t ADCsamples = 2048;
 		uint16_t ADC_data[ADCsamples];
 		adc_busy = true;
@@ -168,6 +169,22 @@ void isCommand(char *cmdd, size_t LF_position)
 		for (size_t i = 0; i < ADCsamples; ++i)
 		{
 			sprintf(msg,"%d\r\n", ADC_data[i]);
+=======
+		uint16_t ADC_data[1024];
+		adc_busy = true;
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_data, 1024);
+
+		while(adc_busy);;
+
+		sprintf(msg,"ADC done..\r\n");
+		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
+		while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
+
+		// printing values
+		for (size_t i = 0; i < 1024; ++i)
+		{
+			sprintf(msg,"ADC value = %d\r\n", ADC_data[i]);
+>>>>>>> 237bab68d3d892b3521958efc890cff1bac9ab16
 			HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 			while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
 		}
