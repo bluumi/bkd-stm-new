@@ -7,6 +7,8 @@
 
 /* Includes */
 #include "main_module.h"
+#include "arm_math.h"
+#include "arm_const_structs.h"
 #include "main.h"
 
 #include <string.h>
@@ -158,6 +160,8 @@ void isCommand(char *cmdd, size_t LF_position)
 	} else if ((strncmp("ADC", (char*)cmdd, 3) == 0) && (LF_position == 3))
 	{
 		size_t ADCsamples = 2048;
+		size_t FFTsize = 1024;
+		size_t i = 0;
 		uint16_t ADC_data[ADCsamples];
 		adc_busy = true;
 		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_data, ADCsamples);
@@ -165,13 +169,41 @@ void isCommand(char *cmdd, size_t LF_position)
 		while(adc_busy);;
 
 		// printing values
-		for (size_t i = 0; i < ADCsamples; ++i)
+		for (i = 0; i < ADCsamples; ++i)
 		{
 			sprintf(msg,"%d\r\n", ADC_data[i]);
 			HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 			while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
+
+			HAL_GPIO_TogglePin(GPIOB, LD1_Pin); // When done, turns off and indicates the end of receiving samples
 		}
 
+		float32_t FFTinput[2048];
+
+		for (i = 0; i < 2048; ++i)
+		{
+			FFTinput[i] = ADC_data[i]/4096.0;
+			FFTinput[i+1] = 0;
+		}
+
+		float32_t FFToutput[FFTsize];
+		arm_cfft_radix4_instance_f32 S;
+		float32_t maxValue = 0;
+		uint32_t maxIndex = 0;
+
+		arm_cfft_radix4_init_f32(&S, FFTsize, 0, 1);
+		arm_cfft_radix4_f32(&S, FFTinput);
+
+		arm_cmplx_mag_f32(FFTinput, FFToutput, FFTsize);
+
+		FFToutput[0] = 0;
+
+		arm_max_f32(FFToutput, FFTsize, &maxValue, &maxIndex);
+
+		sprintf(msg,"\r\n""maxValue = %d\r\n"
+					"maxIndex = %ld\r\n", (uint16_t)maxValue, (uint32_t)maxIndex);
+		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
+		while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
 
 	} else
 	{
