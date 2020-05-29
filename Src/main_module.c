@@ -160,31 +160,34 @@ void isCommand(char *cmdd, size_t LF_position)
 	} else if ((strncmp("ADC", (char*)cmdd, 3) == 0) && (LF_position == 3))
 	{
 		size_t ADCsamples = 2048;
-		size_t FFTsize = 1024;
-		size_t i = 0;
 		uint16_t ADC_data[ADCsamples];
+		size_t FFTsize = 1024;
+		float32_t FFTinput[2048];
+
 		adc_busy = true;
 		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_data, ADCsamples);
 
 		while(adc_busy);;
 
+#if 0
 		sprintf(msg,"ADC sampling:\r\n");
 		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 		while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
-
 		// printing values
-		for (i = 0; i < ADCsamples; ++i)
+		for (size_t i = 0; i < ADCsamples; ++i)
 		{
 			sprintf(msg,"%d\r\n", ADC_data[i]);
 			HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 			while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
-
 			HAL_GPIO_TogglePin(GPIOB, LD1_Pin); // When done, turns off and indicates the end of receiving samples
 		}
+#endif
 
-		float32_t FFTinput[2048];
+		/*
+		 * FFT of received ADC data
+		 */
 
-		for (i = 0; i < 2048; ++i)
+		for (size_t i = 0; i < 2048; ++i)
 		{
 			if(i%2 == 0)
 				FFTinput[i] = ADC_data[i];
@@ -204,28 +207,26 @@ void isCommand(char *cmdd, size_t LF_position)
 
 		uint16_t FFTout[1024];
 
+#if 0
 		sprintf(msg,"FFTout:\r\n");
 		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 		while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
+#endif
 
-		for(i = 0; i < 1024; ++i)
+		for(size_t i = 1; i < 1024; ++i)
 		{
 			FFTout[i] = FFToutput[i];
 			sprintf(msg,"%d\r\n", FFTout[i]);
 			HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 			while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
+			HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
 		}
 
 		FFTout[0]=0;
-		uint16_t larg = FFTout[0];
-
-		for(i = 0; i < 1024; i++)
-		{
-			if (larg < FFTout[i])
-				larg = FFTout[i];
-		}
-
+#if 0
 		uint16_t pks[1024];
+		uint16_t idx[1024];
+
 
 		sprintf(msg,"Peaks:\r\n");
 		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
@@ -236,20 +237,13 @@ void isCommand(char *cmdd, size_t LF_position)
 			if(FFTout[n-1] <= FFTout[n] && FFTout[n+1] < FFTout[n])
 			{
 				pks[n] = FFTout[n];
-				sprintf(msg,"%d\r\n", pks[n]);
+				idx[n] = n;
+				sprintf(msg,"%d\r\n", pks[n]); 		// printing out all peaks
 				HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
 				while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
-
-				if(pks[n] > larg/2)
-				{
-					sprintf(msg,"peak = %d idx = %d\r\n", pks[n], n);
-					HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
-					while(HAL_UART_GetState(&huart1) != HAL_UART_STATE_READY);
-				}
 			}
 		}
 
-#if 0
 		sprintf(msg,"\r\n""maxValue = %d\r\n"
 					"maxIndex = %ld\r\n", (uint16_t)maxValue, (uint32_t)maxIndex);
 		HAL_UART_Transmit_IT(&huart1, (uint8_t*)msg, strlen(msg));
@@ -275,7 +269,6 @@ void cmd_led(void)
 {
 	HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
 }
-
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
